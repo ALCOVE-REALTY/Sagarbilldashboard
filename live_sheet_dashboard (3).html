@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Live Sheet Dashboard</title>
+
+<!-- Chart.js (charts আঁকার জন্য) - internet লাগবে -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+  /* ============================================================
+     THEME TOKENS — এক জায়গায় রং বদলালে পুরো dashboard বদলাবে
+     ============================================================ */
+  :root{
+    --ink:#0d1b2a;          /* deep navy - main text */
+    --ink-soft:#54657a;     /* muted text */
+    --line:#dfe5ec;         /* borders */
+    --paper:#f5f7fa;        /* page background */
+    --card:#ffffff;         /* card background */
+    --gold:#b8860b;         /* accent 1 */
+    --teal:#0f7b6c;         /* accent 2 */
+    --rust:#a63d40;         /* accent 3 (negative / alert) */
+    --blue:#2b5d8a;         /* accent 4 */
+    --radius:10px;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:"Segoe UI", system-ui, -apple-system, "Noto Sans Bengali", sans-serif;
+    font-size:14px;
+    line-height:1.5;
+  }
+  .wrap{max-width:1280px;margin:0 auto;padding:22px 18px 60px}
+
+  /* ---------- HEADER ---------- */
+  header.top{
+    display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;
+    justify-content:space-between;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:14px;margin-bottom:22px;
+  }
+  header.top h1{font-size:23px;margin:0;font-weight:650;letter-spacing:-.2px}
+  .sub{color:var(--ink-soft);font-size:12.5px;margin-top:3px}
+  .status{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--teal);display:inline-block}
+  .dot.stale{background:var(--gold)}
+  .dot.err{background:var(--rust)}
+
+  button, select, input{
+    font-family:inherit;font-size:13px;color:var(--ink);
+    background:var(--card);border:1px solid var(--line);
+    border-radius:6px;padding:7px 11px;cursor:pointer;
+  }
+  button:hover{border-color:var(--ink-soft)}
+  button:focus-visible, select:focus-visible, input:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+  button.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+  input[type=search]{cursor:text;min-width:190px}
+
+  /* ---------- MESSAGE BANNER ---------- */
+  #banner{display:none;border-left:4px solid var(--rust);background:#fdf2f2;
+    padding:13px 15px;border-radius:6px;margin-bottom:18px;font-size:13px}
+  #banner b{display:block;margin-bottom:5px}
+  #banner ol{margin:8px 0 0 18px;padding:0}
+  #banner code{background:#fff;padding:1px 4px;border-radius:3px;border:1px solid var(--line)}
+
+  /* ---------- KPI CARDS ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:22px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--blue);
+    border-radius:var(--radius);padding:14px 15px}
+  .kpi:nth-child(2){border-top-color:var(--teal)}
+  .kpi:nth-child(3){border-top-color:var(--gold)}
+  .kpi:nth-child(4){border-top-color:var(--rust)}
+  .kpi .label{font-size:12px;color:var(--ink-soft);margin-bottom:6px}
+  .kpi .value{font-size:26px;font-weight:650;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+  .kpi .note{font-size:11.5px;color:var(--ink-soft);margin-top:4px}
+
+  /* ---------- PANELS ---------- */
+  .grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:14px;margin-bottom:22px}
+  @media (max-width:860px){.grid2{grid-template-columns:1fr}}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px 16px}
+  .panel h2{font-size:14px;margin:0 0 4px;font-weight:600}
+  .panel .hint{font-size:11.5px;color:var(--ink-soft);margin-bottom:10px}
+  .chartbox{position:relative;height:290px}
+
+  /* ---------- CONTROLS ---------- */
+  .controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-bottom:12px}
+  .controls .spacer{flex:1}
+
+  /* ---------- TABLE ---------- */
+  .tablewrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);max-height:560px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{position:sticky;top:0;background:#eef2f7;font-weight:600;cursor:pointer;user-select:none;z-index:2}
+  th .arrow{color:var(--ink-soft);font-size:10px;margin-left:4px}
+  tbody tr:nth-child(even){background:#fafbfd}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px;font-size:12.5px;color:var(--ink-soft)}
+  .empty{padding:34px;text-align:center;color:var(--ink-soft)}
+  footer{margin-top:26px;font-size:11.5px;color:var(--ink-soft);border-top:1px solid var(--line);padding-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===================== HEADER ===================== -->
+  <header class="top">
+    <div>
+      <h1 id="title">Live Sheet Dashboard</h1>
+      <div class="sub" id="subtitle">Connecting to Google Sheet…</div>
+    </div>
+    <div class="status">
+      <select id="source" title="Sheet tab"></select>
+      <span class="dot" id="dot"></span>
+      <span class="sub" id="lastUpdated">—</span>
+      <button id="refreshBtn" class="primary">Refresh now</button>
+      <button id="autoBtn">Auto-refresh: on</button>
+      <button id="csvBtn">Download filtered CSV</button>
+    </div>
+  </header>
+
+  <!-- ===================== ERROR / HELP BANNER ===================== -->
+  <div id="banner"></div>
+
+  <!-- ===================== KPI CARDS ===================== -->
+  <section class="kpis" id="kpis"></section>
+
+  <!-- ===================== CHARTS ===================== -->
+  <section class="grid2">
+    <div class="panel">
+      <h2>Breakdown</h2>
+      <div class="hint">Group by যেকোনো column, measure বদলাতে পারবেন</div>
+      <div class="controls">
+        <label class="sub">Group by</label>
+        <select id="groupBy"></select>
+        <label class="sub">Measure</label>
+        <select id="measure"></select>
+      </div>
+      <div class="chartbox"><canvas id="barChart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <h2>Share of total</h2>
+      <div class="hint">উপরের group-by অনুযায়ী top 8 share</div>
+      <div class="chartbox"><canvas id="pieChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ===================== DATA TABLE ===================== -->
+  <section class="panel">
+    <h2>Records</h2>
+    <div class="hint">Column header-এ click করলে sort হবে</div>
+    <div class="controls">
+      <input type="search" id="search" placeholder="Search any text…" />
+      <label class="sub" id="filterLabel"></label>
+      <select id="filterVal"></select>
+      <span class="spacer"></span>
+      <select id="pageSize">
+        <option value="25">25 rows</option>
+        <option value="50" selected>50 rows</option>
+        <option value="100">100 rows</option>
+        <option value="100000">All rows</option>
+      </select>
+    </div>
+    <div class="tablewrap"><table id="table"><thead></thead><tbody></tbody></table></div>
+    <div class="pager">
+      <button id="prev">Previous</button>
+      <span id="pageInfo">—</span>
+      <button id="next">Next</button>
+    </div>
+  </section>
+
+  <footer>
+    Data source: Google Sheets (live). Dashboard refreshes automatically — sheet-এ নতুন row add করলে পরের refresh-এ দেখা যাবে।
+  </footer>
+</div>
+
+<script>
+/* ==================================================================
+   STEP 1 — CONFIG
+   এখানেই শুধু পরিবর্তন করতে হবে। বাকি code হাত দিতে হবে না।
+   ================================================================== */
+const CONFIG = {
+  // Sheet ID = URL-এর /d/ আর /edit এর মাঝের অংশ
+  SHEET_ID: "1LY9zqBsO8pq4to9-Qqgj1vqsYrjDEbnVGmHYFbWGYAE",
+
+  /* ----------------------------------------------------------------
+     প্রতিটা tab একটা করে line।
+       gid = sheet-এ ওই tab খুললে URL-এর শেষে যে gid=... দেখায়
+       url = (optional) Publish-to-web CSV link, backup হিসেবে
+     gid দিলেই যথেষ্ট — url না দিলেও চলবে।
+     ---------------------------------------------------------------- */
+  SOURCES: [
+    { name: "HO Bill", gid: "0",
+      url: "https://docs.google.com/spreadsheets/d/e/2PACX-1vTC3HYK-TRfmciIzsw8Te2w-bOh6BFQ2b3eaaPeaF9YWXS3hle4o45MnG4uHFEDlytezDOgl762irkq/pub?output=csv" },
+
+    // অন্য tab খুলে URL থেকে gid copy করে নিচের লাইনগুলো চালু করুন
+    // { name: "Admin Bill 24-25",   gid: "PASTE_GID" },
+    // { name: "Service Bill 24-25", gid: "PASTE_GID" },
+    // { name: "Supply Bill 24-25",  gid: "PASTE_GID" }
+  ],
+
+  REFRESH_SECONDS: 60,                  // কত সেকেন্ড পর পর auto refresh
+  DASHBOARD_TITLE: "Bill Tracking Dashboard",
+  HEADER_ROW: 1                         // sheet-এ header কোন row-তে আছে (সাধারণত 1)
+};
+
+/* ==================================================================
+   STEP 2 — DATA আনার ৩টা পথ (fallback chain)
+
+   কেন ৩টা? browser-এর CORS নিয়মের কারণে একেক পরিবেশে একেকটা কাজ করে।
+     1) gviz CSV   — সবচেয়ে ভালো, Google এখানে CORS permission দেয়
+     2) pub CSV    — publish-to-web link (redirect-এর কারণে কখনো fail করে)
+     3) gviz JSONP — <script> tag দিয়ে load, CORS একেবারেই লাগে না (last resort)
+   একটা fail করলে পরেরটা নিজে থেকে চেষ্টা হবে।
+   ================================================================== */
+function candidates(){
+  const src = CONFIG.SOURCES[STATE.sourceIndex] || CONFIG.SOURCES[0];
+  const cb  = "_cb=" + Date.now();
+  const base = `https://docs.google.com/spreadsheets/d/${CONFIG.SHEET_ID}/gviz/tq`;
+  const list = [];
+
+  if (CONFIG.SHEET_ID && src.gid !== undefined)
+    list.push({ kind:"csv",   url:`${base}?tqx=out:csv&headers=1&gid=${src.gid}&${cb}` });
+
+  if (src.url)
+    list.push({ kind:"csv",   url: src.url + (src.url.includes("?") ? "&" : "?") + cb });
+
+  if (CONFIG.SHEET_ID && src.gid !== undefined)
+    list.push({ kind:"jsonp", url:`${base}?tqx=out:json&headers=1&gid=${src.gid}&${cb}` });
+
+  return list;
+}
+
+/* JSONP loader — fetch নয়, <script> tag দিয়ে আনে, তাই CORS আটকাতে পারে না।
+   Google-এর উত্তর আসে google.visualization.Query.setResponse({...}) আকারে,
+   তাই আগে থেকে ওই function টা বানিয়ে রেখে উত্তরটা ধরে ফেলি। */
+function loadJSONP(url){
+  return new Promise((resolve, reject) => {
+    window.google = window.google || {};
+    google.visualization = google.visualization || {};
+    google.visualization.Query = google.visualization.Query || {};
+
+    const s = document.createElement("script");
+    const done = () => { clearTimeout(timer); s.remove(); };
+    const timer = setTimeout(() => { done(); reject(new Error("JSONP timeout")); }, 15000);
+
+    google.visualization.Query.setResponse = resp => { done(); resolve(resp); };
+    s.onerror = () => { done(); reject(new Error("JSONP blocked")); };
+    s.src = url;
+    document.head.appendChild(s);
+  });
+}
+
+/* gviz JSON উত্তরকে আমাদের headers + rows ফরম্যাটে বদলাই।
+   cell.f = formatted value (₹1,500 / 15-Jan-2025), cell.v = raw value */
+function fromGviz(resp){
+  const t = resp.table;
+  const headers = t.cols.map((c,i) => String(c.label || "").trim() || ("Column " + (i+1)));
+  const rows = t.rows.map(r => (r.c || []).map(cell => cell ? (cell.f ?? cell.v ?? "") : ""));
+  return { headers, rows };
+}
+
+/* ==================================================================
+   STEP 3 — CSV PARSER
+   কেন নিজে লিখছি? কারণ cell-এর ভিতরে comma বা line-break থাকলে
+   সাধারণ split(",") ভেঙে যায়। এই parser quote handle করে।
+   ================================================================== */
+function parseCSV(text){
+  const rows=[]; let row=[], val="", inQuote=false;
+  for (let i=0;i<text.length;i++){
+    const c = text[i];
+    if (inQuote){
+      if (c === '"'){
+        if (text[i+1] === '"'){ val += '"'; i++; }   // "" মানে আসল quote
+        else inQuote = false;
+      } else val += c;
+    } else {
+      if (c === '"') inQuote = true;
+      else if (c === ','){ row.push(val); val=""; }
+      else if (c === '\n'){ row.push(val); rows.push(row); row=[]; val=""; }
+      else if (c !== '\r') val += c;
+    }
+  }
+  if (val !== "" || row.length){ row.push(val); rows.push(row); }
+  // পুরো ফাঁকা row বাদ
+  return rows.filter(r => r.some(c => String(c).trim() !== ""));
+}
+
+/* ==================================================================
+   STEP 4 — DATA TYPE DETECTION
+   কোন column সংখ্যা, কোনটা তারিখ, কোনটা text — নিজে থেকে বুঝে নেয়।
+   এর ফলে sheet-এর column নাম বদলালেও dashboard ভাঙবে না।
+   ================================================================== */
+function toNumber(v){
+  if (v === null || v === undefined) return null;
+  // ₹ , % space ইত্যাদি সরিয়ে সংখ্যা বের করি
+  const s = String(v).replace(/[₹$,\s%]/g,"").trim();
+  if (s === "" || isNaN(s)) return null;
+  return Number(s);
+}
+function toDate(v){
+  const s = String(v).trim();
+  if (s.length < 6) return null;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+function detectTypes(headers, rows){
+  return headers.map((h, i) => {
+    const vals = rows.map(r => r[i]).filter(v => String(v||"").trim() !== "").slice(0,200);
+    if (!vals.length) return "text";
+    const nums  = vals.filter(v => toNumber(v) !== null).length;
+    const dates = vals.filter(v => toDate(v) !== null).length;
+    if (nums / vals.length > 0.8) return "number";
+    if (dates / vals.length > 0.8) return "date";
+    return "text";
+  });
+}
+
+/* ==================================================================
+   GLOBAL STATE — এক জায়গায় সব data রাখি
+   ================================================================== */
+let STATE = {
+  headers: [], types: [], rows: [],
+  sortCol: null, sortDir: 1,
+  page: 1,
+  sourceIndex: 0,                 // কোন tab এখন দেখানো হচ্ছে
+  auto: true, timer: null
+};
+let barChart=null, pieChart=null;
+
+const $ = id => document.getElementById(id);
+const fmt = n => (Math.abs(n) >= 1000 ? n.toLocaleString("en-IN",{maximumFractionDigits:2}) : String(Math.round(n*100)/100));
+
+/* ==================================================================
+   STEP 5 — DATA LOAD
+   ================================================================== */
+async function loadData(){
+  $("dot").className = "dot stale";
+  $("lastUpdated").textContent = "Loading…";
+
+  const tries = candidates();
+  const errors = [];
+
+  // একটার পর একটা পথ চেষ্টা করি, প্রথম যেটা সফল হবে সেটাই নেব
+  for (const c of tries){
+    try{
+      let headers, rows;
+
+      if (c.kind === "jsonp"){
+        const conv = fromGviz(await loadJSONP(c.url));
+        headers = conv.headers; rows = conv.rows;
+      } else {
+        const res = await fetch(c.url, { cache:"no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const text = await res.text();
+        if (text.trim().startsWith("<")) throw new Error("access denied (HTML returned)");
+
+        const all = parseCSV(text);
+        if (all.length < 2) throw new Error("no rows");
+        const hIdx = Math.max(0, CONFIG.HEADER_ROW - 1);
+        headers = all[hIdx].map((h,i) => String(h).trim() || ("Column " + (i+1)));
+        rows    = all.slice(hIdx + 1);
+      }
+
+      if (!rows.length) throw new Error("no rows");
+
+      STATE.headers = headers;
+      STATE.rows    = rows;
+      STATE.types   = detectTypes(headers, rows);
+
+      $("banner").style.display = "none";
+      $("dot").className = "dot";
+      $("lastUpdated").textContent = "Updated " + new Date().toLocaleTimeString();
+      $("subtitle").textContent =
+        `${rows.length} rows · ${headers.length} columns · live from Google Sheets`;
+
+      buildSelectors();
+      renderAll();
+      return;                                   // সফল — আর চেষ্টা করার দরকার নেই
+    }catch(err){
+      errors.push(`${c.kind}: ${err.message}`);  // fail হলে পরের পথে যাই
+    }
+  }
+
+  $("dot").className = "dot err";
+  $("lastUpdated").textContent = "Not connected";
+  showBanner(errors);
+}
+
+/* ভুল হলে কী করতে হবে সেটা পরিষ্কার করে দেখানো — guess করতে হবে না */
+function showBanner(errors){
+  const b = $("banner");
+  b.style.display = "block";
+  b.innerHTML = `
+    <b>Sheet থেকে data আনা যায়নি</b>
+    তিনটে পদ্ধতিই fail করেছে। ক্রম অনুযায়ী এগুলো দেখুন:
+    <ol>
+      <li>এই file টা <b>download করে নিজের PC-তে double-click</b> করে খুলুন। Chat-এর preview বা online editor-এ চললে বাইরের data আসবে না।</li>
+      <li>Sheet-এ <b>Share → General access → Anyone with the link → Viewer</b> সেট করুন। এটাই সবচেয়ে বেশি দরকারি ধাপ।</li>
+      <li><code>SHEET_ID</code> আর প্রতিটা tab-এর <code>gid</code> মিলিয়ে নিন (sheet-এ tab খুললে URL-এর শেষে gid দেখা যায়)।</li>
+      <li>Office firewall/proxy docs.google.com আটকাচ্ছে কিনা দেখুন — mobile hotspot-এ একবার test করলেই বোঝা যাবে।</li>
+    </ol>
+    <div style="margin-top:9px;font-size:11.5px;color:#54657a">Technical detail — ${errors.join(" | ")}</div>`;
+}
+
+/* ==================================================================
+   STEP 6 — DROPDOWN তৈরি (group by / measure / filter)
+   ================================================================== */
+function buildSelectors(){
+  const textCols = STATE.headers.map((h,i)=>({h,i})).filter(c => STATE.types[c.i] !== "number");
+  const numCols  = STATE.headers.map((h,i)=>({h,i})).filter(c => STATE.types[c.i] === "number");
+
+  const keep = (sel, prev) => { if (prev !== null && sel.querySelector(`option[value="${prev}"]`)) sel.value = prev; };
+
+  const gPrev = $("groupBy").value, mPrev = $("measure").value, fPrev = $("filterVal").value;
+
+  $("groupBy").innerHTML = (textCols.length?textCols:STATE.headers.map((h,i)=>({h,i})))
+      .map(c => `<option value="${c.i}">${c.h}</option>`).join("");
+  keep($("groupBy"), gPrev);
+
+  $("measure").innerHTML = `<option value="-1">Count of rows</option>` +
+      numCols.map(c => `<option value="${c.i}">Sum of ${c.h}</option>`).join("");
+  keep($("measure"), mPrev);
+
+  // Filter dropdown = group-by column-এর unique values
+  const gi = Number($("groupBy").value || 0);
+  $("filterLabel").textContent = "Filter " + STATE.headers[gi];
+  const uniq = [...new Set(STATE.rows.map(r => String(r[gi]||"").trim()).filter(Boolean))].sort();
+  $("filterVal").innerHTML = `<option value="">All</option>` + uniq.map(v=>`<option>${v}</option>`).join("");
+  keep($("filterVal"), fPrev);
+}
+
+/* ==================================================================
+   STEP 7 — FILTER + SORT
+   ================================================================== */
+function visibleRows(){
+  const q  = $("search").value.trim().toLowerCase();
+  const gi = Number($("groupBy").value || 0);
+  const fv = $("filterVal").value;
+
+  let rows = STATE.rows.filter(r => {
+    if (fv && String(r[gi]||"").trim() !== fv) return false;
+    if (q && !r.some(c => String(c).toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  if (STATE.sortCol !== null){
+    const ci = STATE.sortCol, t = STATE.types[ci];
+    rows = [...rows].sort((a,b)=>{
+      let x=a[ci], y=b[ci];
+      if (t === "number"){ x = toNumber(x) ?? -Infinity; y = toNumber(y) ?? -Infinity; }
+      else if (t === "date"){ x = toDate(x)?.getTime() ?? 0; y = toDate(y)?.getTime() ?? 0; }
+      else { x = String(x).toLowerCase(); y = String(y).toLowerCase(); }
+      return x < y ? -STATE.sortDir : x > y ? STATE.sortDir : 0;
+    });
+  }
+  return rows;
+}
+
+/* ==================================================================
+   STEP 8 — RENDER: KPI + CHARTS + TABLE
+   ================================================================== */
+function renderAll(){ renderKPIs(); renderCharts(); renderTable(); }
+
+function renderKPIs(){
+  const rows = visibleRows();
+  const cards = [{label:"Records shown", value: fmt(rows.length), note:`out of ${STATE.rows.length} total`}];
+
+  // প্রথম ৩টা numeric column-এর total দেখাই — business-এ এগুলোই সাধারণত amount/qty
+  STATE.types.forEach((t,i)=>{
+    if (t === "number" && cards.length < 4){
+      const nums = rows.map(r => toNumber(r[i])).filter(v => v !== null);
+      const sum  = nums.reduce((a,b)=>a+b,0);
+      const avg  = nums.length ? sum/nums.length : 0;
+      cards.push({label:"Total " + STATE.headers[i], value: fmt(sum), note:"Average " + fmt(avg)});
+    }
+  });
+
+  if (cards.length < 4){
+    const gi = Number($("groupBy").value || 0);
+    const uniq = new Set(rows.map(r => String(r[gi]||"").trim()).filter(Boolean));
+    cards.push({label:"Unique " + STATE.headers[gi], value: fmt(uniq.size), note:"distinct values"});
+  }
+
+  $("kpis").innerHTML = cards.map(c =>
+    `<div class="kpi"><div class="label">${c.label}</div><div class="value">${c.value}</div><div class="note">${c.note}</div></div>`
+  ).join("");
+}
+
+/* group by করে aggregate — Excel-এর pivot table যা করে, সেটাই */
+function aggregate(){
+  const gi = Number($("groupBy").value || 0);
+  const mi = Number($("measure").value);
+  const map = new Map();
+  visibleRows().forEach(r=>{
+    const key = String(r[gi]||"(blank)").trim() || "(blank)";
+    const add = mi === -1 ? 1 : (toNumber(r[mi]) ?? 0);
+    map.set(key, (map.get(key)||0) + add);
+  });
+  return [...map.entries()].sort((a,b)=>b[1]-a[1]);
+}
+
+function renderCharts(){
+  const data = aggregate();
+  const top  = data.slice(0,12);
+  const palette = ["#2b5d8a","#0f7b6c","#b8860b","#a63d40","#5b7fa6","#3f9c8d","#d2a63f","#7d5ba6","#c96a4a","#4a8a7b","#8a6d3b","#6b7a8f"];
+
+  if (barChart) barChart.destroy();
+  barChart = new Chart($("barChart"), {
+    type:"bar",
+    data:{ labels: top.map(d=>d[0]),
+           datasets:[{ label: $("measure").selectedOptions[0].text, data: top.map(d=>d[1]),
+                       backgroundColor:"#2b5d8a", borderRadius:4 }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{ x:{ticks:{autoSkip:false,maxRotation:45,minRotation:0}}, y:{beginAtZero:true} } }
+  });
+
+  const top8 = data.slice(0,8);
+  if (pieChart) pieChart.destroy();
+  pieChart = new Chart($("pieChart"), {
+    type:"doughnut",
+    data:{ labels: top8.map(d=>d[0]),
+           datasets:[{ data: top8.map(d=>d[1]), backgroundColor: palette, borderWidth:1, borderColor:"#fff" }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{ position:"right", labels:{boxWidth:11, font:{size:11}} } }, cutout:"55%" }
+  });
+}
+
+function renderTable(){
+  const rows = visibleRows();
+  const size = Number($("pageSize").value);
+  const pages = Math.max(1, Math.ceil(rows.length/size));
+  if (STATE.page > pages) STATE.page = pages;
+  const start = (STATE.page-1)*size;
+  const slice = rows.slice(start, start+size);
+
+  $("table").querySelector("thead").innerHTML = "<tr>" + STATE.headers.map((h,i)=>{
+    const arrow = STATE.sortCol === i ? (STATE.sortDir === 1 ? "▲" : "▼") : "";
+    return `<th data-col="${i}">${h}<span class="arrow">${arrow}</span></th>`;
+  }).join("") + "</tr>";
+
+  const tb = $("table").querySelector("tbody");
+  tb.innerHTML = slice.length
+    ? slice.map(r => "<tr>" + STATE.headers.map((_,i)=>{
+        const cls = STATE.types[i] === "number" ? ' class="num"' : "";
+        return `<td${cls}>${String(r[i] ?? "")}</td>`;
+      }).join("") + "</tr>").join("")
+    : `<tr><td class="empty" colspan="${STATE.headers.length}">এই filter-এ কোনো row নেই। Search clear করে দেখুন।</td></tr>`;
+
+  $("pageInfo").textContent = `Page ${STATE.page} of ${pages} · ${rows.length} rows`;
+
+  // header click = sort
+  tb.parentElement.querySelectorAll("th").forEach(th=>{
+    th.onclick = () => {
+      const c = Number(th.dataset.col);
+      STATE.sortDir = (STATE.sortCol === c) ? -STATE.sortDir : 1;
+      STATE.sortCol = c;
+      renderTable();
+    };
+  });
+}
+
+/* ==================================================================
+   STEP 9 — EVENTS + AUTO REFRESH
+   ================================================================== */
+$("groupBy").onchange = () => { buildSelectors(); STATE.page=1; renderAll(); };
+$("measure").onchange = renderAll;
+$("filterVal").onchange = () => { STATE.page=1; renderAll(); };
+$("search").oninput   = () => { STATE.page=1; renderAll(); };
+$("pageSize").onchange= () => { STATE.page=1; renderTable(); };
+$("prev").onclick = () => { if (STATE.page>1){ STATE.page--; renderTable(); } };
+$("next").onclick = () => { STATE.page++; renderTable(); };
+$("refreshBtn").onclick = loadData;
+
+$("autoBtn").onclick = () => {
+  STATE.auto = !STATE.auto;
+  $("autoBtn").textContent = "Auto-refresh: " + (STATE.auto ? "on" : "off");
+  setupTimer();
+};
+function setupTimer(){
+  clearInterval(STATE.timer);
+  if (STATE.auto) STATE.timer = setInterval(loadData, CONFIG.REFRESH_SECONDS*1000);
+}
+
+// যা screen-এ দেখছেন সেটাই CSV হয়ে নামবে (Excel-এ খোলা যাবে)
+$("csvBtn").onclick = () => {
+  const esc = v => `"${String(v ?? "").replace(/"/g,'""')}"`;
+  const csv = [STATE.headers.map(esc).join(",")]
+    .concat(visibleRows().map(r => STATE.headers.map((_,i)=>esc(r[i])).join(",")))
+    .join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv"}));
+  a.download = "dashboard_export.csv";
+  a.click();
+};
+
+/* ==================================================================
+   START
+   ================================================================== */
+document.title = CONFIG.DASHBOARD_TITLE;
+$("title").textContent = CONFIG.DASHBOARD_TITLE;
+
+// Tab dropdown তৈরি। একটাই source হলে dropdown লুকিয়ে রাখি (অপ্রয়োজনীয় UI নয়)
+$("source").innerHTML = CONFIG.SOURCES.map((s,i)=>`<option value="${i}">${s.name}</option>`).join("");
+if (CONFIG.SOURCES.length < 2) $("source").style.display = "none";
+$("source").onchange = () => {
+  STATE.sourceIndex = Number($("source").value);
+  // নতুন tab মানে নতুন column — তাই sort/filter/page reset করা দরকার
+  STATE.sortCol = null; STATE.page = 1;
+  $("search").value = "";
+  loadData();
+};
+
+loadData();
+setupTimer();
+</script>
+</body>
+</html>
